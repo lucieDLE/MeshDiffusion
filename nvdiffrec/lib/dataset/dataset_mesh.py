@@ -9,6 +9,7 @@
 
 import numpy as np
 import torch
+import pytorch3d
 import sys
 
 from ..render import util
@@ -18,7 +19,7 @@ from ..render import light
 
 from .dataset import Dataset
 
-import kaolin
+# import kaolin
 
 ###############################################################################
 # Reference dataset using mesh & rendering
@@ -114,8 +115,6 @@ class DatasetMesh(Dataset):
             else:
                 camera_mv = None
 
-
-
         with torch.no_grad():
             render_out = render.render_mesh(self.glctx, self.ref_mesh, mvp, campos, self.envlight, iter_res, spp=iter_spp, 
                                 num_layers=self.FLAGS.layers, msaa=True, background=None, xfm_lgt=camera_mv, flat_shading=self.flat_shading)
@@ -126,7 +125,11 @@ class DatasetMesh(Dataset):
             geo_normal = render_out['geo_normal']
             pos = render_out['pos']
 
-            sample_points = torch.tensor(kaolin.ops.mesh.sample_points(self.ref_mesh.v_pos.unsqueeze(0), self.ref_mesh.t_pos_idx, 50000)[0][0])
+            py3_mesh = pytorch3d.structures.Meshes(verts=[self.ref_mesh.v_pos], faces=[self.ref_mesh.t_pos_idx])
+
+            # sample_points = torch.tensor(kaolin.ops.mesh.sample_points(self.ref_mesh.v_pos.unsqueeze(0), self.ref_mesh.t_pos_idx, 50000)[0][0])
+            sample_points = pytorch3d.ops.sample_points_from_meshes(py3_mesh, num_samples=50000)
+
             vertex_points = self.ref_mesh.v_pos
         
         return_dict = {

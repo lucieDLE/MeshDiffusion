@@ -1,11 +1,14 @@
 import torch
 import os
 import logging
+import pdb
 
 
 def restore_checkpoint(ckpt_dir, state, device, strict=False):
+  print(ckpt_dir)
+
   if not os.path.exists(ckpt_dir):
-    os.makedirs(os.path.dirname(ckpt_dir))
+    os.makedirs(os.path.dirname(ckpt_dir), exist_ok=True)
     logging.warning(f"No checkpoint found at {ckpt_dir}. "
                     f"Returned the same state as input")
     if strict:
@@ -13,6 +16,9 @@ def restore_checkpoint(ckpt_dir, state, device, strict=False):
     return state
   else:
     loaded_state = torch.load(ckpt_dir, map_location=device)
+    # pdb.set_trace()
+    print()
+
     state['optimizer'].load_state_dict(loaded_state['optimizer'])
     state['model'].load_state_dict(loaded_state['model'], strict=False)
     state['ema'].load_state_dict(loaded_state['ema'])

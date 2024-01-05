@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 import functools
 import numpy as np
-
+import pdb 
 from . import utils, layers, normalization
 
 # RefineBlock = layers.RefineBlock
@@ -36,14 +36,19 @@ get_act = layers.get_act
 get_normalization = normalization.get_normalization
 default_initializer = layers.default_init
 
-@utils.register_model(name='ddpm_res64')
-class DDPMRes64(nn.Module):
+@utils.register_model(name='ddpm_res64_cond')
+class DDPMRes64Cond(nn.Module):
   def __init__(self, config):
     super().__init__()
     self.act = act = get_act(config)
     self.register_buffer('sigmas', torch.tensor(utils.get_sigmas(config)))
 
+    self.num_classes = config.model.num_classes
     self.nf = nf = config.model.nf
+
+    self.map_label = nn.Linear(in_features=self.num_classes, 
+                               out_features=nf*4)
+    
     ch_mult = config.model.ch_mult
     self.num_res_blocks = num_res_blocks = config.model.num_res_blocks
     self.attn_resolutions = attn_resolutions = config.model.attn_resolutions
@@ -125,20 +130,30 @@ class DDPMRes64(nn.Module):
 
     self.scale_by_sigma = config.model.scale_by_sigma
 
-  def forward(self, x, labels):
+  def forward(self, x, timesteps, labels=None):
     modules = self.all_modules
     m_idx = 0
     if self.conditional:
-      # class_emb = self.class_emb
 
       # timestep/scale embedding
-      timesteps = labels
       temb = layers.get_timestep_embedding(timesteps, self.nf)
       # temb += class_emb
       temb = modules[m_idx](temb)
       m_idx += 1
       temb = modules[m_idx](self.act(temb))
       m_idx += 1
+      
+      
+      ## define self.classes
+      ## self.map_label
+
+      if self.map_label is not None:
+        # pdb.set_trace()
+        tmp = nn.functional.one_hot(labels,num_classes=self.num_classes).float()
+        embeddings=self.map_label(tmp)
+        temb = temb + embeddings
+
+
     else:
       temb = None
 
@@ -198,7 +213,7 @@ class DDPMRes64(nn.Module):
       # Divide the output by sigmas. Useful for training with the NCSN loss.
       # The DDPM loss scales the network output by sigma in the loss function,
       # so no need of doing it here.
-      used_sigmas = self.sigmas[labels, None, None, None]
+      used_sigmas = self.sigmas[timesteps, None, None, None]
       h = h / used_sigmas
 
     return h

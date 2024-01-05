@@ -1,3 +1,25 @@
+.cache/
+.gnupg/
+.imageio/
+.local/
+.ssh/
+.vscode/
+.vscode-server/
+docker/
+MeshDiffusion_models/
+conditional_v0/
+conditional_v1/
+data_dmet/
+mesh/
+tiny-cuda-nn/
+
+*.csv
+*condyles*.json
+*.npy
+
+.python_history
+.bash_history
+
 # Mac OS
 .DS_Store
 

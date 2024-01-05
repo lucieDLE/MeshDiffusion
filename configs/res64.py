@@ -11,7 +11,7 @@ def get_config():
   training.sde = 'vpsde'
   training.continuous = False
   training.reduce_mean = True
-  training.batch_size = 48
+  training.batch_size = 6
   training.lip_scale = None
 
   training.snapshot_freq_for_preemption = 1000
@@ -32,6 +32,7 @@ def get_config():
   data.filter_meta_path = "PLACEHOLDER" ### metadata for the list of training samples
   data.num_workers = 4
   data.aug = True
+  data.labels=False
 
 
   # model
@@ -55,7 +56,7 @@ def get_config():
   optim = config.optim
   optim.lr = 2e-5
 
-  config.eval.batch_size = 4
+  config.eval.batch_size = 32
   config.eval.eval_dir = "PLACEHOLDER"
 
   config.seed = 42

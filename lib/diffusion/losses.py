@@ -54,16 +54,16 @@ def optimization_manager(config):
 def get_ddpm_loss_fn(vpsde, train, mask=None, loss_type='l2'):
   """Legacy code to reproduce previous results on DDPM. Not recommended for new work."""
 
-  def loss_fn(model, batch):
+  def loss_fn(model, batch, labels=None, weights=None):
     model_fn = mutils.get_model_fn(model, train=train)
-    labels = torch.randint(0, vpsde.N, (batch.shape[0],), device=batch.device)
+    random_timepoints = torch.randint(0, vpsde.N, (batch.shape[0],), device=batch.device)
     sqrt_alphas_cumprod = vpsde.sqrt_alphas_cumprod.to(batch.device)
     sqrt_1m_alphas_cumprod = vpsde.sqrt_1m_alphas_cumprod.to(batch.device)
     noise = torch.randn_like(batch)
-    perturbed_data = sqrt_alphas_cumprod[labels, None, None, None, None] * batch + \
-                     sqrt_1m_alphas_cumprod[labels, None, None, None, None] * noise
+    perturbed_data = sqrt_alphas_cumprod[random_timepoints, None, None, None, None] * batch + \
+                     sqrt_1m_alphas_cumprod[random_timepoints, None, None, None, None] * noise
     perturbed_data = perturbed_data * mask
-    score = model_fn(perturbed_data, labels)
+    score = model_fn(perturbed_data, random_timepoints, labels)
 
     if loss_type == 'l2':
       losses = torch.square(score - noise)
@@ -76,6 +76,13 @@ def get_ddpm_loss_fn(vpsde, train, mask=None, loss_type='l2'):
       losses = losses * mask
       losses = torch.mean(losses.reshape(losses.shape[0], -1), dim=-1)
       loss = torch.mean(losses) / mask.sum() * np.prod(mask.size())
+    if labels is not None:
+      ## implement weighted sum
+      losses = torch.mean(losses.reshape(losses.shape[0], -1), dim=-1)
+      losses = weights[labels].cuda()*losses
+      loss = torch.mean(losses)
+      
+
     else:
       losses = torch.mean(losses.reshape(losses.shape[0], -1), dim=-1)
       loss = torch.mean(losses)
@@ -99,9 +106,9 @@ def get_step_fn(sde, train, optimize_fn=None, mask=None, loss_type='l2'):
     A one-step function for training or evaluation.
   """
 
-  loss_fn = get_ddpm_loss_fn(sde, train,  mask=mask, loss_type=loss_type)
+  loss_fn = get_ddpm_loss_fn(sde, train, mask=mask, loss_type=loss_type)
 
-  def step_fn(state, batch, clear_grad=True, update_param=True):
+  def step_fn(state, batch, labels=None, weights=None, clear_grad=True, update_param=True):
     """Running one step of training or evaluation.
 
     This function will undergo `jax.lax.scan` so that multiple steps can be pmapped and jit-compiled together
@@ -120,7 +127,7 @@ def get_step_fn(sde, train, optimize_fn=None, mask=None, loss_type='l2'):
       optimizer = state['optimizer']
       if clear_grad:
         optimizer.zero_grad()
-      loss = loss_fn(model, batch)
+      loss = loss_fn(model, batch, labels, weights)
       loss.backward()
       if update_param:
         optimize_fn(optimizer, model.parameters(), step=state['step'])
@@ -131,7 +138,7 @@ def get_step_fn(sde, train, optimize_fn=None, mask=None, loss_type='l2'):
         ema = state['ema']
         ema.store(model.parameters())
         ema.copy_to(model.parameters())
-        loss = loss_fn(model, batch)
+        loss = loss_fn(model, batch, labels, weights)
         ema.restore(model.parameters())
 
     return {

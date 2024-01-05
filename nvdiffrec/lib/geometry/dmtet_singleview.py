@@ -10,14 +10,16 @@
 import os
 import numpy as np
 import torch
+import pytorch3d
 
 from ..render import mesh
 from ..render import render
 from ..render import regularizer
 
 
-import kaolin
+# import kaolin
 import pytorch3d.ops
+import pytorch3d.loss
 from ..render import util as render_utils
 
 import torch.nn.functional as F
@@ -507,10 +509,14 @@ class DMTetGeometry(torch.nn.Module):
         # Visibility regularizer
         reg_loss += torch.mean(buffers['occlusion'][..., :-1] * buffers['occlusion'][..., -1:]) * 1e0 * min(1.0, iteration / 500)
 
-        pred_points = kaolin.ops.mesh.sample_points(imesh.v_pos.unsqueeze(0), imesh.t_pos_idx, 50000)[0][0]
+        # pointcloud chamfer distance
+        # pred_points = kaolin.ops.mesh.sample_points(imesh.v_pos.unsqueeze(0), imesh.t_pos_idx, 50000)[0][0]
+        py3_mesh = pytorch3d.structures.Meshes(verts=[imesh.v_pos], faces=[imesh.t_pos_idx])
+        pred_points = pytorch3d.ops.sample_points_from_meshes(py3_mesh, num_samples=50000)
         target_pts = target['spts']
-        chamfer = kaolin.metrics.pointcloud.chamfer_distance(pred_points.unsqueeze(0), target_pts.unsqueeze(0)).mean()
-        reg_loss += chamfer
 
+        # chamfer_mean = kaolin.metrics.pointcloud.chamfer_distance(pred_points.unsqueeze(0), target_pts.unsqueeze(0)).mean()
+        chamfer_loss = pytorch3d.loss.chamfer_distance(pred_points, target_pts)
+        reg_loss += chamfer_loss[0]
 
         return img_loss, reg_loss

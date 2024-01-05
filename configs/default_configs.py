@@ -1,8 +1,9 @@
 import ml_collections
 import torch
+import pdb
 
 
-def get_default_configs():
+def get_default_configs(workdir):
   config = ml_collections.ConfigDict()
   # training
   config.training = training = ml_collections.ConfigDict()
@@ -20,7 +21,7 @@ def get_default_configs():
   training.reduce_mean = False
   training.iter_size = 1
   training.loss_type = 'l2'
-  training.train_dir = "PLACEHOLDER"
+  training.train_dir = workdir
 
   # sampling
   config.sampling = sampling = ml_collections.ConfigDict()
@@ -31,6 +32,7 @@ def get_default_configs():
 
   # evaluation
   config.eval = evaluate = ml_collections.ConfigDict()
+  print(config.eval.keys())
   evaluate.begin_ckpt = 50
   evaluate.end_ckpt = 96
   evaluate.batch_size = 512
@@ -39,10 +41,12 @@ def get_default_configs():
   evaluate.enable_loss = True
   evaluate.enable_bpd = False
   evaluate.bpd_dataset = 'test'
-  evaluate.ckpt_path = "PLACEHOLDER"
-  evaluate.partial_dmtet_path = "PLACEHOLDER"
-  evaluate.tet_path = "PLACEHOLDER"
+  evaluate.ckpt_path = workdir
+  evaluate.partial_dmtet_path = workdir
+  evaluate.tet_path = workdir
   evaluate.freeze_iters = 950
+  evaluate.eval_dir=""
+  evaluate.ckpt_path=""
 
   # data
   config.data = data = ml_collections.ConfigDict()
@@ -54,8 +58,8 @@ def get_default_configs():
   data.num_channels = 3
   data.num_workers = 4
   data.normalize_sdf = True
-  data.meta_path = "PLACEHOLDER" ### metadata for all dataset files
-  data.filter_meta_path = "PLACEHOLDER" ### metadata for the list of training samples
+  data.meta_path = workdir ### metadata for all dataset files
+  data.filter_meta_path = workdir ### metadata for the list of training samples
   data.extension = 'pt' ### either 'pt' or 'npy', depending how the data are stored
 
   # model

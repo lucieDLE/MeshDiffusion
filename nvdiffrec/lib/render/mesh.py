@@ -10,7 +10,9 @@
 import os
 import numpy as np
 import torch
+import vtk
 
+from . import texture
 from . import obj
 from . import util
 
@@ -96,10 +98,58 @@ class Mesh:
 # Mesh loeading helper
 ######################################################################################
 
+def load_vtk(filename):
+    # read surface
+    reader = vtk.vtkPolyDataReader()
+    reader.SetFileName(filename)
+    reader.Update()
+    surf = reader.GetOutput()
+
+    # compute points 
+    vtk_points = surf.GetPoints()
+    num_points = vtk_points.GetNumberOfPoints()
+
+    vertices = np.zeros((num_points, 3), dtype=float)
+    for i in range(num_points):
+        vertices[i] = vtk_points.GetPoint(i)
+    vertices =  torch.tensor(vertices, dtype=torch.float32, device='cuda')
+
+    # computes faces 
+    cells = surf.GetPolys()
+    cells.InitTraversal()
+    faces = []
+    for cell_id in range(surf.GetNumberOfCells()):
+        cell = vtk.vtkIdList()
+        if cells.GetNextCell(cell):
+            points_cells = []
+            for i in range(cell.GetNumberOfIds()):
+                point_id = cell.GetId(i)
+                points_cells.append(cell.GetId(i))
+            faces.append(points_cells)
+
+    all_materials = [
+    {
+        'name' : '_default_mat',
+        'bsdf' : 'kd',
+        'kd'   : texture.Texture2D(torch.tensor([0.5, 0.5, 0.5], dtype=torch.float32, device='cuda')),
+        'ks'   : texture.Texture2D(torch.tensor([0.0, 0.0, 0.0], dtype=torch.float32, device='cuda'))
+    }]
+
+    uber_material = all_materials[0]
+
+    faces = torch.tensor(faces, dtype=torch.int64, device='cuda')
+    imesh = Mesh(vertices, faces,material=uber_material)
+    imesh = auto_normals(imesh)
+
+    return imesh
+
 def load_mesh(filename, mtl_override=None, mtl_default=None, use_default=False, no_additional=False):
     name, ext = os.path.splitext(filename)
     if ext == ".obj":
         return obj.load_obj(filename, clear_ks=True, mtl_override=mtl_override, mtl_default=mtl_default, use_default=use_default, no_additional=no_additional)
+    elif ext =='.vtk':
+        return load_vtk(filename)
+
     assert False, "Invalid mesh file extension"
 
 ######################################################################################
@@ -199,17 +249,18 @@ def center_by_reference(base_mesh, ref_aabb, scale):
 ######################################################################################
 def auto_normals(imesh):
 
-    i0 = imesh.t_pos_idx[:, 0]
+    i0 = imesh.t_pos_idx[:, 0] #  id point 1 of all faces 
     i1 = imesh.t_pos_idx[:, 1]
     i2 = imesh.t_pos_idx[:, 2]
+    
 
     v0 = imesh.v_pos[i0, :]
     v1 = imesh.v_pos[i1, :]
     v2 = imesh.v_pos[i2, :]
 
     f_nrm = face_normals = torch.cross(v1 - v0, v2 - v0)
-
     # Splat face normals to vertices
+
     v_nrm = torch.zeros_like(imesh.v_pos)
     v_nrm.scatter_add_(0, i0[:, None].repeat(1,3), face_normals)
     v_nrm.scatter_add_(0, i1[:, None].repeat(1,3), face_normals)

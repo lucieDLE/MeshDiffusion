@@ -1,11 +1,12 @@
 import os
 import sys
 import numpy as np
+import pandas as pd 
 
 import logging
 # Keep the import below for registering all model definitions
-from .models import ddpm_res64, ddpm_res128
-
+from .models import ddpm_res64, ddpm_res128, ddpm_res64_cond
+from sklearn.utils import class_weight
 from . import losses
 from .models import utils as mutils
 from .models.ema import ExponentialMovingAverage
@@ -14,6 +15,7 @@ import torch
 from torch.utils import tensorboard
 from .utils import save_checkpoint, restore_checkpoint
 from ..dataset.shapenet_dmtet_dataset import ShapeNetDMTetDataset
+from ..dataset.condyles_dmtet_dataset import CondylesDMTetDataset
 
 def train(config):
     """Runs the training pipeline.
@@ -52,6 +54,10 @@ def train(config):
     initial_step = int(state['step'])
 
     json_path = config.data.meta_path
+    df = pd.read_csv(json_path)
+    unique_classes = np.sort(np.unique(df['class']))
+    unique_class_weights = np.array(class_weight.compute_class_weight(class_weight='balanced', classes=unique_classes, y=df['class']))
+    unique_class_weights = torch.from_numpy(unique_class_weights)
     print("----- Assigning mask -----")
     logging.info(f"{json_path}, {config.data.filter_meta_path}")
 
@@ -65,14 +71,14 @@ def train(config):
     print(f"work dir: {workdir}")
 
     print("sdf normalized or not: ", config.data.normalize_sdf)
-    train_dataset = ShapeNetDMTetDataset(json_path, deform_scale=config.model.deform_scale, aug=True, grid_mask=mask, 
-            filter_meta_path=config.data.filter_meta_path, normalize_sdf=config.data.normalize_sdf, extension=config.data.extension)
+
+
+    train_dataset = CondylesDMTetDataset(json_path, deform_scale=config.model.deform_scale, aug=True, grid_mask=mask,
+                                         normalize_sdf=config.data.normalize_sdf, extension=config.data.extension)
 
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config.training.batch_size, 
-            shuffle=True,
-            num_workers=config.data.num_workers,
-            pin_memory=True)
+                                               shuffle=True,num_workers=config.data.num_workers)
 
     data_iter = iter(train_loader)
 
@@ -97,19 +103,21 @@ def train(config):
         for step_inner in range(iter_size):
             try:
                 # batch, batch_mask = next(data_iter)
-                batch = next(data_iter)
+                batch, label = next(data_iter)
             except StopIteration:
                 # StopIteration is thrown if dataset ends
                 # reinitialize data loader 
                 data_iter = iter(train_loader)
-                batch = next(data_iter)
+                batch, label = next(data_iter)
 
             batch = batch.cuda()
-
+            
             # Execute one training step
             clear_grad_flag = (step_inner == 0)
             update_param_flag = (step_inner == iter_size - 1)
-            loss_dict = train_step_fn(state, batch, clear_grad=clear_grad_flag, update_param=update_param_flag)
+            if config.data.labels == False:
+                label = None
+            loss_dict = train_step_fn(state, batch, labels=label, weights=unique_class_weights, clear_grad=clear_grad_flag, update_param=update_param_flag)
             loss = loss_dict['loss']
             tmp_loss += loss.item()
 

@@ -219,19 +219,19 @@ class AncestralSamplingPredictor(Predictor):
             raise NotImplementedError(f"SDE class {sde.__class__.__name__} not yet supported.")
         assert not probability_flow, "Probability flow not supported by ancestral sampling"
 
-    def vpsde_update_fn(self, x, t):
+    def vpsde_update_fn(self, x, t, labels):
         sde = self.sde
         timestep = (t * (sde.N - 1) / sde.T).long()
         beta = sde.discrete_betas.to(t.device)[timestep]
-        score = self.score_fn(x, t)
+        score = self.score_fn(x, t, labels)
         x_mean = (x + beta[:, None, None, None, None] * score) / torch.sqrt(1. - beta)[:, None, None, None, None]
         noise = torch.randn_like(x)
         x = x_mean + torch.sqrt(beta)[:, None, None, None, None] * noise
         return x, x_mean
 
-    def update_fn(self, x, t):
+    def update_fn(self, x, t, labels):
         if isinstance(self.sde, sde_lib.VPSDE):
-            return self.vpsde_update_fn(x, t)
+            return self.vpsde_update_fn(x, t, labels)
         else:
             raise NotImplementedError
 
@@ -332,7 +332,7 @@ class NoneCorrector(Corrector):
         return x, x
 
 
-def shared_predictor_update_fn(x, t, sde, model, predictor, probability_flow, continuous):
+def shared_predictor_update_fn(x, t, labels, sde, model, predictor, probability_flow, continuous):
     """A wrapper that configures and returns the update function of predictors."""
     score_fn = mutils.get_score_fn(sde, model, train=False, continuous=continuous)
     if predictor is None:
@@ -340,7 +340,7 @@ def shared_predictor_update_fn(x, t, sde, model, predictor, probability_flow, co
         predictor_obj = NonePredictor(sde, score_fn, probability_flow)
     else:
         predictor_obj = predictor(sde, score_fn, probability_flow)
-    return predictor_obj.update_fn(x, t)
+    return predictor_obj.update_fn(x, t, labels)
 
 
 def shared_corrector_update_fn(x, t, sde, model, corrector, continuous, snr, n_steps):
@@ -389,7 +389,7 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
                                             snr=snr,
                                             n_steps=n_steps)
 
-    def pc_sampler(model, 
+    def pc_sampler(model, labels, 
             partial=None, partial_mask=None, partial_channel=0, 
             freeze_iters=None):
         """ The PC sampler funciton.
@@ -448,7 +448,7 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
 
                     x, x_mean = corrector_update_fn(x, vec_t, model=model)
                     x, x_mean = x * grid_mask, x_mean * grid_mask
-                    x, x_mean = predictor_update_fn(x, vec_t, model=model)
+                    x, x_mean = predictor_update_fn(x, vec_t, labels, model=model)
                     x, x_mean = x * grid_mask, x_mean * grid_mask
 
 
@@ -474,7 +474,7 @@ def get_pc_sampler(sde, shape, predictor, corrector, inverse_scaler, snr,
                     vec_t = torch.ones(shape[0], device=t.device) * t
                     x, x_mean = corrector_update_fn(x, vec_t, model=model)
                     x, x_mean = x * grid_mask, x_mean * grid_mask
-                    x, x_mean = predictor_update_fn(x, vec_t, model=model)
+                    x, x_mean = predictor_update_fn(x, vec_t, labels, model=model)
                     x, x_mean = x * grid_mask, x_mean * grid_mask
 
                     if return_traj and i >= 700 and i % 10 == 0:

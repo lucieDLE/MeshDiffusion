@@ -13,8 +13,10 @@ import torch
 from ..render import mesh
 from ..render import render
 from ..render import regularizer
+import pytorch3d
 
-import kaolin
+import pytorch3d.loss
+# import kaolin
 from ..render import util as render_utils
 import torch.nn.functional as F
 
@@ -185,7 +187,7 @@ class DMTetGeometryFixedTopo(torch.nn.Module):
         self.tanh          = False
         self.deform_scale  = deform_scale
 
-        tets = np.load('./data/tets/{}_tets_cropped.npz'.format(self.grid_res))
+        tets = np.load('nvdiffrec/data/tets/{}_tets_cropped.npz'.format(self.grid_res))
 
         self.verts    = torch.tensor(tets['vertices'], dtype=torch.float32, device='cuda') * scale
         self.indices  = torch.tensor(tets['indices'], dtype=torch.long, device='cuda')
@@ -342,9 +344,14 @@ class DMTetGeometryFixedTopo(torch.nn.Module):
         reg_loss += regularizer.laplace_regularizer_const(imesh.v_pos - self.initial_guess_v_pos, imesh.t_pos_idx) * self.FLAGS.laplace_scale * (1 - t_iter) * 1e-2
         
         ### Chamfer distance for ShapeNet
-        pred_points = kaolin.ops.mesh.sample_points(imesh.v_pos.unsqueeze(0), imesh.t_pos_idx, 50000)[0][0]
+        # pred_points = kaolin.ops.mesh.sample_points(imesh.v_pos.unsqueeze(0), imesh.t_pos_idx, 50000)[0][0]
+        py3_mesh = pytorch3d.structures.Meshes(verts=[imesh.v_pos], faces=[imesh.t_pos_idx])
+        pred_points = pytorch3d.ops.sample_points_from_meshes(py3_mesh, num_samples=50000)
         target_pts = target['spts']
-        chamfer = kaolin.metrics.pointcloud.chamfer_distance(pred_points.unsqueeze(0), target_pts.unsqueeze(0)).mean()
-        reg_loss += chamfer
+
+        # chamfer_mean = kaolin.metrics.pointcloud.chamfer_distance(pred_points.unsqueeze(0), target_pts.unsqueeze(0)).mean()
+        chamfer_loss = pytorch3d.loss.chamfer_distance(pred_points, target_pts)
+        reg_loss += chamfer_loss[0]
+
 
         return img_loss, reg_loss

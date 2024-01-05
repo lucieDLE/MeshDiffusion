@@ -19,7 +19,8 @@ def uncond_gen(
         Unconditional Generation
     """
     with torch.no_grad():
-        eval_dir, ckpt_path = config.eval.eval_dir, config.eval.ckpt_path
+        eval_dir, ckpt_path, gen_class = config.eval.eval_dir, config.eval.ckpt_path, config.eval.gen_class
+        labels = torch.full((config.eval.batch_size,), gen_class)
         # Create directory to eval_folder
         os.makedirs(eval_dir, exist_ok=True)
 
@@ -37,27 +38,31 @@ def uncond_gen(
         img_size = config.data.image_size
         grid_mask = torch.load(f'./data/grid_mask_{img_size}.pt').view(1, img_size, img_size, img_size).to("cuda")
 
-        sampling_eps = 1e-3
-        sampling_shape = (config.eval.batch_size,
-                        config.data.num_channels,
-                        config.data.image_size, config.data.image_size, config.data.image_size)
-        sampling_fn = sampling.get_sampling_fn(config, sde, sampling_shape, inverse_scaler, sampling_eps, grid_mask=grid_mask)
+        idx=0
+        for i in range(int(config.eval.num_samples/config.eval.batch_size)):
+            sampling_eps = 1e-3
+            sampling_shape=(config.eval.batch_size,
+                            config.data.num_channels,
+                            config.data.image_size, config.data.image_size, config.data.image_size)
+            sampling_fn = sampling.get_sampling_fn(config, sde, sampling_shape, inverse_scaler, sampling_eps, grid_mask=grid_mask)
 
-        assert os.path.exists(ckpt_path)
-        print('ckpt path:', ckpt_path)
-        try:
-            state = restore_checkpoint(ckpt_path, state, device=config.device)
-        except:
-            raise
-        ema.copy_to(score_model.parameters())
+            assert os.path.exists(ckpt_path)
+            print('ckpt path:', ckpt_path)
+            try:
+                state = restore_checkpoint(ckpt_path, state, device=config.device)
+            except:
+                raise
+            ema.copy_to(score_model.parameters())
 
-        print(f"loaded model is trained till iter {state['step'] // config.training.iter_size}")
-        save_file_path = os.path.join(eval_dir, f"{idx}.npy")
+            print(f"loaded model is trained till iter {state['step'] // config.training.iter_size}")
+            save_file_path = os.path.join(eval_dir, f"{idx}.npy")
 
 
-        samples, n = sampling_fn(score_model)
-        samples = samples.cpu().numpy()
-        np.save(save_file_path, samples)
+            samples, n = sampling_fn(score_model, labels)
+            samples = samples.cpu().numpy()
+            np.save(save_file_path, samples)
+            
+            idx = i+config.eval.batch_size
 
 
 def slerp(z1, z2, alpha):

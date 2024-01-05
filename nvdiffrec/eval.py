@@ -6,14 +6,10 @@
 # disclosure or distribution of this material and related documentation 
 # without an express license agreement from NVIDIA CORPORATION or 
 # its affiliates is strictly prohibited.
-
+import vtk
 import os
-import time
 import argparse
 import json
-import sys
-
-import glob
 import tqdm
 
 import numpy as np
@@ -33,7 +29,7 @@ from lib.render import mlptexture
 from lib.render import light
 from lib.render import render
 
-from pytorch3d.io import save_obj
+from pytorch3d.io import save_obj, save_ply
 
 import pymeshlab
 
@@ -250,7 +246,7 @@ def validate(glctx, geometry, opt_material, lgt, dataset_validate, out_dir, FLAG
 
             for k in result_dict.keys():
                 np_img = result_dict[k].detach().cpu().numpy()
-                util.save_image(out_dir + '/' + ('val_%06d_%s.png' % (it, k)), np_img)
+                # util.save_image(out_dir + '/' + ('val_%06d_%s.png' % (it, k)), np_img)
 
         avg_mse = np.mean(np.array(mse_values))
         avg_psnr = np.mean(np.array(psnr_values))
@@ -292,6 +288,61 @@ class Trainer(torch.nn.Module):
                 self.light.xfm(target['mv'])
 
         return self.geometry.tick(glctx, target, self.light, self.material, self.image_loss_fn, it)
+
+def mkVtkIdList(it):
+    """
+    Makes a vtkIdList from a Python iterable. I'm kinda surprised that
+     this is necessary, since I assumed that this kind of thing would
+     have been built into the wrapper and happen transparently, but it
+     seems not.
+
+    :param it: A python iterable.
+    :return: A vtkIdList
+    """
+    vil = vtk.vtkIdList()
+    for i in it:
+        vil.InsertNextId(int(i))
+    return vil
+
+def save_to_vtk(ms, filepath, class_color):
+
+    id = ms.current_mesh_id()
+    mesh = ms.mesh(id)
+
+    faces = mesh.face_matrix()
+    vertices = mesh.vertex_matrix()
+
+    # Create an unstructured grid
+    vtk_mesh = vtk.vtkPolyData()
+    points = vtk.vtkPoints()
+    polys = vtk.vtkCellArray()
+    colors = vtk.vtkUnsignedCharArray()
+
+    # Load the point, cell, and data attributes.
+    for i, xi in enumerate(vertices):
+        points.InsertPoint(i, xi)
+    for pt in faces:
+        polys.InsertNextCell(mkVtkIdList(pt))
+
+    # We now assign the pieces to the vtkPolyData.
+    vtk_mesh.SetPoints(points)
+    vtk_mesh.SetPolys(polys)
+    
+    colors.SetNumberOfComponents(3)
+    colors.SetNumberOfTuples(len(vertices))
+    for c in range(len(vertices)):
+        colors.SetTuple(c, class_color)
+    vtk_mesh.GetPointData().SetScalars(colors)
+
+    # Write the unstructured grid to a file
+    writer = vtk.vtkPolyDataWriter()
+    writer.SetFileName(filepath)
+
+    writer.SetInputData(vtk_mesh)
+    writer.Update()
+
+    writer.Write()
+
 
 #----------------------------------------------------------------------------
 # Main function.
@@ -361,7 +412,7 @@ if __name__ == "__main__":
     os.makedirs(FLAGS.out_dir, exist_ok=True)
     viz_path = os.path.join(FLAGS.out_dir, 'viz')
     mesh_path = os.path.join(FLAGS.out_dir, 'mesh')
-    os.makedirs(viz_path, exist_ok=True)
+    # os.makedirs(viz_path, exist_ok=True)
     os.makedirs(mesh_path, exist_ok=True)
 
     glctx = dr.RasterizeGLContext()
@@ -400,6 +451,12 @@ if __name__ == "__main__":
     data_all = np.load(FLAGS.sample_path)
     print('shape of generated data', data_all.shape)
 
+
+    path, name = os.path.split(FLAGS.sample_path)
+
+    bs, ext = os.path.splitext(name)
+    idx = int(bs)
+
     for no_data in tqdm.trange(data_all.shape[0]):
 
         grid = torch.tensor(data_all[no_data])
@@ -435,16 +492,13 @@ if __name__ == "__main__":
         v_pose = rotate_scene(FLAGS, FLAGS.angle_ind) ## pick a pose (pose # from 0 to 50)
         result_image, _ = validate_itr(glctx, prepare_batch(v_pose, FLAGS.background), geometry, opt_material, lgt, FLAGS)
         result_image = result_image.detach().cpu().numpy()
-        util.save_image(os.path.join(viz_path, ('%s_%06d.png' % (FLAGS.viz_name, no_data))), result_image)
+        # util.save_image(os.path.join(viz_path, ('%s_%06d.png' % (FLAGS.viz_name, idx))), result_image)
 
 
         ### save post-processed mesh
-        mesh_savepath = os.path.join(mesh_path, '{:06d}.obj'.format(no_data))
-        save_obj(
-            verts=base_mesh.v_pos,
-            faces=base_mesh.t_pos_idx,
-            f=mesh_savepath
-        )
+
+        mesh_savepath = os.path.join(mesh_path, '{:06d}.ply'.format(idx))
+        save_ply(verts=base_mesh.v_pos,faces=base_mesh.t_pos_idx,f=mesh_savepath)
 
         ms = pymeshlab.MeshSet()
         ms.load_new_mesh(mesh_savepath)
@@ -453,4 +507,10 @@ if __name__ == "__main__":
         # ms.apply_coord_laplacian_smoothing(stepsmoothnum=3, cotangentweight=True) ## for smoother surface
         ms.meshing_isotropic_explicit_remeshing()
         ms.apply_filter_script()
+        vtk_path = os.path.join(mesh_path, '{:06d}.vtk'.format(idx))
+
+        save_to_vtk(ms, vtk_path, [150, 150, 150])
         ms.save_current_mesh(mesh_savepath)
+
+        os.remove(mesh_savepath)
+        idx +=1

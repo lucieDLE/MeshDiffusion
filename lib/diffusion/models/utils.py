@@ -89,10 +89,10 @@ def create_model(config, use_parallel=True):
   """Create the score model."""
   model_name = config.model.name
   score_model = get_model(model_name)(config)
-  # score_model = score_model.to(config.device)
-  score_model = score_model
+  # score_model = score_model
   if use_parallel:
-    score_model = torch.nn.DataParallel(score_model).to(config.device)
+    score_model = torch.nn.DataParallel(score_model)
+  score_model = score_model.to(config.device)
   return score_model
 
 
@@ -107,12 +107,12 @@ def get_model_fn(model, train=False):
     A model function.
   """
 
-  def model_fn(x, labels):
+  def model_fn(x, timepoints,labels):
     """Compute the output of the score-based model.
 
     Args:
       x: A mini-batch of input data.
-      labels: A mini-batch of conditioning variables for time steps. Should be interpreted differently
+      timepoints: A mini-batch of conditioning variables for time steps. Should be interpreted differently
         for different models.
 
     Returns:
@@ -120,11 +120,15 @@ def get_model_fn(model, train=False):
     """
     if not train:
       model.eval()
-      return model(x, labels)
     else:
       model.train()
-      return model(x, labels)
 
+
+    if labels is not None:
+      return model(x, timepoints, labels)
+    else:
+      return model(x, timepoints)
+    
   return model_fn
 
 def get_reg_fn(model, train=False):
@@ -183,16 +187,16 @@ def get_score_fn(sde, model, train=False, continuous=False, std_scale=True):
   assert not continuous
   if isinstance(sde, sde_lib.VPSDE):
     if not std_scale:
-      def score_fn(x, t):
-        labels = t * (sde.N - 1)
-        score = model_fn(x, labels)
+      def score_fn(x, t, labels):
+        timepoints = t * (sde.N - 1)
+        score = model_fn(x, timepoints, labels)
         return score
     else:
-      def score_fn(x, t):
+      def score_fn(x, t, labels):
         # For VP-trained models, t=0 corresponds to the lowest noise level
-        labels = t * (sde.N - 1)
-        score = model_fn(x, labels)
-        std = sde.sqrt_1m_alphas_cumprod.to(labels.device)[labels.long()]
+        timepoints = t * (sde.N - 1)
+        score = model_fn(x, timepoints, labels)
+        std = sde.sqrt_1m_alphas_cumprod.to(timepoints.device)[timepoints.long()]
 
         score = -score / std[:, None, None, None, None]
         return score

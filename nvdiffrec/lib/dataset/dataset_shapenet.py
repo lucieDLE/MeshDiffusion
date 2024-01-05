@@ -12,15 +12,25 @@ import torch
 
 import os
 import json
+import pandas as pd
 
 ###############################################################################
 # ShapeNet Dataset to get meshes
 ###############################################################################
 
 class ShapeNetDataset(object):
-    def __init__(self, shapenet_json):
-        with open(shapenet_json, 'r') as f:
-            self.mesh_list = json.load(f)
+    def __init__(self, filename):
+        name, ext = os.path.splitext(filename)
+
+        if ext == '.csv':
+            df = pd.read_csv(filename)
+            self.mesh_list = df['surf'].to_list()
+                             
+        elif ext == '.json':
+            with open(filename, 'r') as f:
+                self.mesh_list = json.load(f)
+        else:
+            print('extension not recognised')
         
         print(f"len all data: {len(self.mesh_list)}")
 

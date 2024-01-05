@@ -1,0 +1,4 @@
+[safe]
+	directory = /home/lumargot/LION/lion_ckpt
+[credential]
+	helper = "!f() { /home/lumargot/MeshDiffusion/.vscode-server/bin/f1b07bd25dfad64b0167beb15359ae573aecd2cc/node /tmp/vscode-remote-containers-ba05bee8-92d5-47f7-a60a-a801b1a9706e.js git-credential-helper $*; }; f"
