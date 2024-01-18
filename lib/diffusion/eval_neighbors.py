@@ -15,6 +15,7 @@ def eval_gen(config, idx=0):
   np_generated = np.load('/home/lumargot/MeshDiffusion/all_grids.npy') ## n_class* n_sample, 4, res, res, res
   df_original = pd.read_csv('/home/lumargot/MeshDiffusion/condyles_4classes_grid_train.csv') ## torch.load(filename)
   outfile = '/home/lumargot/MeshDiffusion/eval_neigbors.csv'
+  df_labels = pd.read_csv('/home/lumargot/MeshDiffusion/labels.csv')
 
   ## Model initialization
   print("Initializing model")
@@ -41,6 +42,7 @@ def eval_gen(config, idx=0):
   l_in_class = []
   l_out_class = []
   l_origin_idx = []
+  l_dist = []
 
   print("computing features of original samples")
   for idx, row in df_original.iterrows():
@@ -57,25 +59,30 @@ def eval_gen(config, idx=0):
   np_features = np.stack(l_origin_features)
   np_features = np_features.reshape((173, 512*4*4*4))
 
+
+
   # flatt = np_features.reshape((np_features.shape[0], np_features.shape[1]*4*4*4))
 
 
 
   print("Initializing Nearest Neighbor")
   #Nearest Neighbor Algorithm
-  k_neighbors = 1
+  k_neighbors = 3
   knn_model = NearestNeighbors(n_neighbors=k_neighbors, metric='euclidean')
   knn_model.fit(np_features)
 
+  dist, idx =  knn_model.kneighbors(np_features)
   j=0
-  class_idx=-1
+
+  # list_idx = []
 
   print("computing generated features and nearest neighbor")
   for gen_sample in np_generated:
 
+
     gen_sample = torch.from_numpy(gen_sample)
-    if j %128 == 0:
-      class_idx +=1
+    class_idx = df_labels.iloc[j]['labels']
+    print(f"sample n: {j} from class : {class_idx}")
 
     ## compute feature
     batch_timestep = torch.ones(1, device=config.device) * smallest_t
@@ -87,13 +94,24 @@ def eval_gen(config, idx=0):
     gen_feature = gen_feature.reshape((gen_feature.shape[0], 512*4*4*4))
     ## then compute nearest neighbors
     distances, indices = knn_model.kneighbors(gen_feature)
-    pred_class = df_original.iloc[indices[0]]['class'].to_numpy()
+    pred_k, dist_k, idx_k = [], [], []
+    
+    for i in range(k_neighbors):
+      dist, idx = distances[:,i].item(), indices[:,i].item()
+      pred = df_original.iloc[idx]['class']
 
+      pred_k.append(pred)
+      dist_k.append(dist)
+      idx_k.append(idx)
 
     l_file.append(j)
     l_in_class.append(class_idx)
-    l_out_class.append(pred_class)
-    l_origin_idx.append(indices[0])
+    l_out_class.append(pred_k)
+    l_origin_idx.append(idx_k)
+    l_dist.append(dist_k)
+
+
+    pred_k, dist_k, idx_k = [], [], []
 
   print("Done")
 
@@ -101,7 +119,8 @@ def eval_gen(config, idx=0):
   df_out = pd.DataFrame({'gen_sample':l_file,
                         'gen_class':l_in_class,
                         'pred_class':l_out_class,
-                        'origin_sample_idx':l_origin_idx})
+                        'origin_sample_idx':l_origin_idx,
+                        'distances': l_dist})
   
   df_out.to_csv(outfile)
 
