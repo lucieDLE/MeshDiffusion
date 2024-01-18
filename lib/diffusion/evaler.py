@@ -38,7 +38,7 @@ def uncond_gen(
         img_size = config.data.image_size
         grid_mask = torch.load(f'./data/grid_mask_{img_size}.pt').view(1, img_size, img_size, img_size).to("cuda")
 
-        idx=0
+        idx=288
         for i in range(int(config.eval.num_samples/config.eval.batch_size)):
             sampling_eps = 1e-3
             sampling_shape=(config.eval.batch_size,
@@ -62,7 +62,7 @@ def uncond_gen(
             samples = samples.cpu().numpy()
             np.save(save_file_path, samples)
             
-            idx = i+config.eval.batch_size
+            idx += config.eval.batch_size
 
 
 def slerp(z1, z2, alpha):
