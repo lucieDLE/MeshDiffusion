@@ -57,6 +57,7 @@ def get_ddpm_loss_fn(vpsde, train, mask=None, loss_type='l2'):
   def loss_fn(model, batch, labels=None, weights=None):
     model_fn = mutils.get_model_fn(model, train=train)
     random_timepoints = torch.randint(0, vpsde.N, (batch.shape[0],), device=batch.device)
+
     sqrt_alphas_cumprod = vpsde.sqrt_alphas_cumprod.to(batch.device)
     sqrt_1m_alphas_cumprod = vpsde.sqrt_1m_alphas_cumprod.to(batch.device)
     noise = torch.randn_like(batch)
@@ -90,6 +91,70 @@ def get_ddpm_loss_fn(vpsde, train, mask=None, loss_type='l2'):
     return loss
 
   return loss_fn
+
+import pdb
+def get_eval_tloss_fn(vpsde, train, steps=5, mask=None, loss_type='l2'):
+  """Legacy code to reproduce previous results on DDPM. Not recommended for new work."""
+
+  def eval_loss_fn(model, batch, timesteps, labels=None, weights=None):
+    model_fn = mutils.get_model_fn(model, train=train)
+
+    timesteps=torch.ones(batch.shape[0], device=batch.device) * timesteps
+
+    timesteps = timesteps.long()
+
+    sqrt_alphas_cumprod = vpsde.sqrt_alphas_cumprod.to(batch.device)
+    sqrt_1m_alphas_cumprod = vpsde.sqrt_1m_alphas_cumprod.to(batch.device)
+    noise = torch.randn_like(batch)
+    perturbed_data = sqrt_alphas_cumprod[timesteps, None, None, None, None] * batch + \
+                     sqrt_1m_alphas_cumprod[timesteps, None, None, None, None] * noise
+    perturbed_data = perturbed_data * mask
+
+    score = model_fn(perturbed_data, timesteps, labels)
+
+    if loss_type == 'l2':
+      losses = torch.square(score - noise)
+    elif loss_type == 'l1':
+      losses = torch.abs(score - noise)
+    else:
+      raise NotImplementedError
+
+    if mask is not None:
+      losses = losses * mask
+      losses = torch.mean(losses.reshape(losses.shape[0], -1), dim=-1)
+      loss = torch.mean(losses) / mask.sum() * np.prod(mask.size())
+    if labels is not None:
+      ## implement weighted sum
+      losses = torch.mean(losses.reshape(losses.shape[0], -1), dim=-1)
+      losses = weights[labels].cuda()*losses
+      loss = torch.mean(losses)
+      
+    else:
+      losses = torch.mean(losses.reshape(losses.shape[0], -1), dim=-1)
+      loss = torch.mean(losses)
+
+    return loss
+  
+  loss_fn = eval_loss_fn
+
+
+  def step_fn(state, batch, labels=None,  weights=None):
+      """Running one step of training or evaluation. """
+      model = state['model']
+
+      losses = {}
+      with torch.no_grad():
+        for t in torch.linspace(0, vpsde.N-1, steps, dtype=torch.int):
+          loss = loss_fn(model, batch, t, labels, weights)
+          losses[f"{t:.3f}"] = (loss.item())
+
+      return losses
+
+  return step_fn
+
+
+
+
 
 def get_step_fn(sde, train, optimize_fn=None, mask=None, loss_type='l2'):
   """Create a one-step training/evaluation function.
