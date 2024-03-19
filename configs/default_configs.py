@@ -3,17 +3,17 @@ import torch
 import pdb
 
 
-def get_default_configs(workdir):
+def get_default_configs():
   config = ml_collections.ConfigDict()
   # training
   config.training = training = ml_collections.ConfigDict()
-  config.training.batch_size = 64
-  training.n_iters = 2400001
+  config.training.batch_size = 4
+  training.n_iters = 100000
   training.snapshot_freq = 50000
   training.log_freq = 50
   training.eval_freq = 100
   ## store additional checkpoints for preemption in cloud computing environments
-  training.snapshot_freq_for_preemption = 5000
+  training.snapshot_freq_for_preemption = 2000
   ## produce samples at each snapshot.
   training.snapshot_sampling = True
   training.likelihood_weighting = False
@@ -21,7 +21,6 @@ def get_default_configs(workdir):
   training.reduce_mean = False
   training.iter_size = 1
   training.loss_type = 'l2'
-  training.train_dir = workdir
 
   # sampling
   config.sampling = sampling = ml_collections.ConfigDict()
@@ -32,7 +31,6 @@ def get_default_configs(workdir):
 
   # evaluation
   config.eval = evaluate = ml_collections.ConfigDict()
-  print(config.eval.keys())
   evaluate.begin_ckpt = 50
   evaluate.end_ckpt = 96
   evaluate.batch_size = 512
@@ -41,9 +39,6 @@ def get_default_configs(workdir):
   evaluate.enable_loss = True
   evaluate.enable_bpd = False
   evaluate.bpd_dataset = 'test'
-  evaluate.ckpt_path = workdir
-  evaluate.partial_dmtet_path = workdir
-  evaluate.tet_path = workdir
   evaluate.freeze_iters = 950
   evaluate.eval_dir=""
   evaluate.ckpt_path=""
@@ -58,8 +53,7 @@ def get_default_configs(workdir):
   data.num_channels = 3
   data.num_workers = 4
   data.normalize_sdf = True
-  data.meta_path = workdir ### metadata for all dataset files
-  data.filter_meta_path = workdir ### metadata for the list of training samples
+  # data.filter_meta_path = workdir ### metadata for the list of training samples
   data.extension = 'pt' ### either 'pt' or 'npy', depending how the data are stored
 
   # model

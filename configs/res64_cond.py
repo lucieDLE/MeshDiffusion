@@ -4,17 +4,16 @@ from configs.default_configs import get_default_configs
 
 
 def get_config():
-  workdir='conditional_v1'
-  config = get_default_configs(workdir)
-
+  config = get_default_configs()
 
   # training
   training = config.training
   training.sde = 'vpsde'
   training.continuous = False
   training.reduce_mean = True
-  training.batch_size = 12
+  training.batch_size = 2
   training.lip_scale = None
+  training.train_dir = './'
 
   training.snapshot_freq_for_preemption = 1000
 
@@ -30,11 +29,13 @@ def get_config():
   data.centered = True
   data.image_size = 64
   data.num_channels = 4
-  data.meta_path = "meta_condyles.json" ### metadata for all dataset files
-  data.filter_meta_path = "meta_condyles.json" ### metadata for the list of training samples
+  data.train_csv = "train.csv" 
+  data.val_csv = "val.csv" 
   data.num_workers = 4
   data.aug = True
   data.labels=True
+  data.mount_point = 'data'
+  data.meta_path = ''
 
 
   # model
@@ -57,12 +58,17 @@ def get_config():
 
   # optim
   optim = config.optim
-  optim.lr = 2e-5
+  optim.lr = 1e-6
 
   config.eval.batch_size = 32
-  config.eval.num_samples = 128
-  config.eval.eval_dir = '/home/lumargot/MeshDiffusion/conditional_v0/classes/3/'
-  config.eval.gen_class = 3
+
+  config.eval.num_samples = 64
+  config.eval.eval_dir = ''
+  config.eval.gen_class = 0
+
+  config.eval.ckpt_path = training.train_dir 
+  config.eval.partial_dmtet_path = config.eval.eval_dir
+  config.eval.tet_path = config.eval.eval_dir
 
   config.seed = 42
 
