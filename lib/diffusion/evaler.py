@@ -21,6 +21,8 @@ def uncond_gen(
     with torch.no_grad():
         eval_dir, ckpt_path, gen_class = config.eval.eval_dir, config.eval.ckpt_path, config.eval.gen_class
         labels = torch.full((config.eval.batch_size,), gen_class)
+
+        print("Creating samples from class: ", labels)
         # Create directory to eval_folder
         os.makedirs(eval_dir, exist_ok=True)
 
@@ -38,12 +40,14 @@ def uncond_gen(
         img_size = config.data.image_size
         grid_mask = torch.load(f'./data/grid_mask_{img_size}.pt').view(1, img_size, img_size, img_size).to("cuda")
 
-        idx=288
+        idx=0
+
+    
         for i in range(int(config.eval.num_samples/config.eval.batch_size)):
             sampling_eps = 1e-3
-            sampling_shape=(config.eval.batch_size,
-                            config.data.num_channels,
+            sampling_shape=(config.eval.batch_size, config.data.num_channels,
                             config.data.image_size, config.data.image_size, config.data.image_size)
+            
             sampling_fn = sampling.get_sampling_fn(config, sde, sampling_shape, inverse_scaler, sampling_eps, grid_mask=grid_mask)
 
             assert os.path.exists(ckpt_path)
