@@ -9,6 +9,7 @@ from .models import ddpm_res64, ddpm_res128, ddpm_res64_cond
 from sklearn.utils import class_weight
 from . import losses
 from .models import utils as mutils
+from comet_ml import Experiment, ExistingExperiment
 from .models.ema import ExponentialMovingAverage
 from . import sde_lib
 import torch
@@ -16,7 +17,7 @@ from torch.utils import tensorboard
 from .utils import save_checkpoint, restore_checkpoint
 from ..dataset.shapenet_dmtet_dataset import ShapeNetDMTetDataset
 from ..dataset.condyles_dmtet_dataset import CondylesDMTetDataset
-
+import pdb
 def train(config):
     """Runs the training pipeline.
 
@@ -53,13 +54,18 @@ def train(config):
     state = restore_checkpoint(checkpoint_meta_dir, state, config.device)
     initial_step = int(state['step'])
 
-    json_path = config.data.meta_path
-    df = pd.read_csv(json_path)
+
+    exp = Experiment(api_key='jvo9wdLqVzWla60yIWoCd0fX2',
+                        project_name='MeshDiffusion',
+                        workspace='luciedle')
+
+
+    df = pd.read_csv(config.data.train_csv)
     unique_classes = np.sort(np.unique(df['class']))
     unique_class_weights = np.array(class_weight.compute_class_weight(class_weight='balanced', classes=unique_classes, y=df['class']))
     unique_class_weights = torch.from_numpy(unique_class_weights)
     print("----- Assigning mask -----")
-    logging.info(f"{json_path}, {config.data.filter_meta_path}")
+    logging.info(f"{config.data.train_csv}")
 
     ### mask on tet to ignore regions
     mask = torch.load(f'./data/grid_mask_{resolution}.pt').view(1, 1, resolution, resolution, resolution).to("cuda")
@@ -73,14 +79,20 @@ def train(config):
     print("sdf normalized or not: ", config.data.normalize_sdf)
 
 
-    train_dataset = CondylesDMTetDataset(json_path, deform_scale=config.model.deform_scale, aug=True, grid_mask=mask,
+    train_dataset = CondylesDMTetDataset(config.data.train_csv, deform_scale=config.model.deform_scale, aug=True, grid_mask=mask,
                                          normalize_sdf=config.data.normalize_sdf, extension=config.data.extension)
 
+    eval_dataset = CondylesDMTetDataset(config.data.val_csv, deform_scale=config.model.deform_scale, aug=True, grid_mask=mask,
+                                         normalize_sdf=config.data.normalize_sdf, extension=config.data.extension)
 
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=config.training.batch_size, 
                                                shuffle=True,num_workers=config.data.num_workers)
 
+    eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=config.training.batch_size, 
+                                               shuffle=False,num_workers=config.data.num_workers)
+
     data_iter = iter(train_loader)
+    eval_iter = iter(eval_loader)
 
     print("data loader set")
 
@@ -91,6 +103,9 @@ def train(config):
     optimize_fn = losses.optimization_manager(config)
     train_step_fn = losses.get_step_fn(sde, train=True, optimize_fn=optimize_fn,
                                         mask=mask, loss_type=config.training.loss_type)
+    
+
+    eval_step_fn = losses.get_eval_tloss_fn(sde, train=False, mask=mask, loss_type=config.training.loss_type)
 
     num_train_steps = config.training.n_iters
 
@@ -117,6 +132,7 @@ def train(config):
             update_param_flag = (step_inner == iter_size - 1)
             if config.data.labels == False:
                 label = None
+            
             loss_dict = train_step_fn(state, batch, labels=label, weights=unique_class_weights, clear_grad=clear_grad_flag, update_param=update_param_flag)
             loss = loss_dict['loss']
             tmp_loss += loss.item()
@@ -126,10 +142,41 @@ def train(config):
             logging.info("step: %d, training_loss: %.5e" % (step, tmp_loss))
             sys.stdout.flush()
             writer.add_scalar("training_loss", loss, step)
+            exp.log_metric('training_loss', loss, step)
+
+        ## evaluation step
+        if step %config.training.log_freq == 0:
+            ema.store(score_model.parameters())
+            ema.copy_to(score_model.parameters())
+
+            eval_loss = 0.0
+            sigma_losses = {}
+
+            try:
+                # batch, batch_mask = next(data_iter)
+                eval_batch, label = next(eval_iter)
+            except StopIteration:
+                # StopIteration is thrown if dataset ends
+                # reinitialize data loader 
+                eval_iter = iter(eval_loader)
+                eval_batch, label = next(eval_iter)
+
+            eval_loss_dict = eval_step_fn(state, eval_batch.cuda(), label, weights=unique_class_weights)
+
+            for key in eval_loss_dict.keys():
+                writer.add_scalar(f"eval_loss/timesteps {key}", eval_loss_dict[key], step)
+                exp.log_metric(f"eval_loss/timesteps {key}", eval_loss_dict[key], step)
+
+            ema.restore(score_model.parameters())
+
+            logging.info("step: %d, eval_loss: %.5e" % (step, eval_loss_dict[key]))
+            # writer.add_scalar("eval_loss", eval_loss, step)
 
         # Save a temporary checkpoint to resume training after pre-emption periodically
         if step != 0 and step % config.training.snapshot_freq_for_preemption == 0:
             logging.info(f"save meta at iter {step}")
+            checkpoint_meta_dir = os.path.join(workdir, "checkpoints-meta", f"checkpoint_{step}.pth")
+
             save_checkpoint(checkpoint_meta_dir, state)
 
         # Save a checkpoint periodically and generate samples if needed
