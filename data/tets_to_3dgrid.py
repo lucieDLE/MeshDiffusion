@@ -3,6 +3,7 @@ import torch
 import os
 import tqdm
 import argparse
+import pdb
 
 def tet_to_grids(vertices, values_list, grid_size):
     grid = torch.zeros(4, grid_size, grid_size, grid_size, device=vertices.device)
@@ -16,12 +17,12 @@ def tet_to_grids(vertices, values_list, grid_size):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='nvdiffrec')
-    parser.add_argument('-res', '--resolution', type=int)
+    parser.add_argument('-res', '--resolution', type=int, help='grid resolution', required=True)
     parser.add_argument('-ss', '--split-size', type=int, default=int(1e8))
     parser.add_argument('-ind', '--index', type=int)
-    parser.add_argument('-r', '--root', type=str)
-    parser.add_argument('-s', '--source', type=str)
-    parser.add_argument('-t', '--target', type=str)
+    parser.add_argument('-r', '--root', type=str, help='data directory containing tets subdir', required=True)
+    parser.add_argument('-s', '--source', type=str, help='directory containing the tetrahedral data', default='tets')
+    parser.add_argument('-t', '--target', type=str, help='directory to save the grid inside root', default='grid')
     FLAGS = parser.parse_args()
 
     tet_path = f'../nvdiffrec/data/tets/{FLAGS.resolution}_tets_cropped.npz'
@@ -33,6 +34,7 @@ if __name__ == "__main__":
         (vertices - vertices.min()) / dx)
     ).long()
 
+
     save_folder = FLAGS.root
 
     grid_folder = os.path.join(save_folder, FLAGS.target)
@@ -40,10 +42,16 @@ if __name__ == "__main__":
 
     tets_folder = os.path.join(save_folder, FLAGS.source)
 
+    files = os.listdir(tets_folder)
+
     for k in tqdm.trange(FLAGS.split_size):
         global_index = k + FLAGS.index * FLAGS.split_size
-        tet_path = os.path.join(tets_folder, 'dmt_dict_{:05d}.pt'.format(global_index))
+        tet_path = files[global_index]
+        path, name = tet_path.split('dict_')
+
+        tet_path = os.path.join(tets_folder, tet_path)
+        
         if os.path.exists(tet_path):
             tet = torch.load(tet_path, map_location="cpu")
             grid = tet_to_grids(vertices_discretized, (tet['sdf'].unsqueeze(-1), tet['deform']), FLAGS.resolution)
-            torch.save(grid, os.path.join(grid_folder, 'grid_{:05d}.pt'.format(global_index)))
+            torch.save(grid, os.path.join(grid_folder, 'grid_{}'.format(name)))
