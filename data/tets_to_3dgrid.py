@@ -25,7 +25,7 @@ if __name__ == "__main__":
     parser.add_argument('-t', '--target', type=str, help='directory to save the grid inside root', default='grid')
     FLAGS = parser.parse_args()
 
-    tet_path = f'../nvdiffrec/data/tets/{FLAGS.resolution}_tets_cropped.npz'
+    tet_path = f'nvdiffrec/data/tets/{FLAGS.resolution}_tets_cropped.npz'
     tet = np.load(tet_path)
     vertices = torch.tensor(tet['vertices'])
     vertices_unique = vertices[:].unique()
