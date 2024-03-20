@@ -1,184 +1,78 @@
-# MeshDiffusion: Score-based Generative 3D Mesh Modeling
+# MeshDiffusion for condyles generation
 
 
-<div align="center">
-  <img src="assets/mesh_teaser.jpg" width="900"/>
-</div>
 
 ## Introduction
 
-This is the official implementation of [MeshDiffusion](https://openreview.net/forum?id=0cpM2ApF9p6) (ICLR 2023 Spotlight).
-
-MeshDiffusion is a diffusion model for generating 3D meshes with a direct parametrization of deep marching tetrahedra (DMTet). Please refer to [our project page](https://meshdiffusion.github.io) for more details and interactive demos.
+This is an adapatation of the official implementation of [MeshDiffusion](https://openreview.net/forum?id=0cpM2ApF9p6) (ICLR 2023 Spotlight).Please refer their [project page](https://meshdiffusion.github.io) for more details and interactive demos.
 
 
-
-<div align="center">
-  <img src="assets/meshdiffusion_pipeline.jpg" width="900"/>
-</div>
-
-## Getting Started
-
-### Requirements
-
-- Python >= 3.8
-- CUDA 11.6
-- Pytorch >= 1.6
-- Pytorch3D
-- ml_collections
-
-
-Follow the instructions to install requirements for [nvdiffrec](https://github.com/NVlabs/nvdiffrec)
-
-### Pretrained Models
-
-Download our pretrained MeshDiffusion models (resolution 64) for [chair](https://keeper.mpdl.mpg.de/f/95640f5bd3764a44b907/?dl=1), [car](https://keeper.mpdl.mpg.de/f/061265ef78df494baaf5/?dl=1), [airplane](https://keeper.mpdl.mpg.de/f/f5074d6b0cb24445a80d/?dl=1), [table](https://huggingface.co/lzzcd001/MeshDiffusion_models/blob/main/table_res64.pt) and [rifle](https://huggingface.co/lzzcd001/MeshDiffusion_models/blob/main/rifle_res64.pt). As a backup option, you can also download the models for car and chair from [Google Drive](https://drive.google.com/drive/folders/15IjbUM1tQf8gS0YsRqY5ZbMs-leJgoJ0?usp=sharing).
-
-Download the res-128 models here: [car](https://huggingface.co/lzzcd001/MeshDiffusion_models/blob/main/car_res128.pt) and [chair](https://huggingface.co/lzzcd001/MeshDiffusion_models/blob/main/chair_res128.pt).
-
-### Datasets
-
-We provide processed datasets (in the form of cubic grids) of resolution 64 in this [link](https://huggingface.co/datasets/lzzcd001/MeshDiffusion_DMTet_Dataset). The deformation scale for the datasets is set to 3.0, and the SDF values of all non-mesh-generating tetrahedral vertices are set to either 1 or -1 (depending on their signs), as described in the paper. The cubic grids with the boundary removed are of size 63x63x63 and padded on the right to 64x64x64 for convenience. Please check `eval.py` to see how to extract DMTet representations from the 3D cubic grids.
 
 ## Inference
 
-### Unconditional Generation
+### Conditional Generation
 
-Run the following
-
+To generate samples, run the following command. The model generates data stored as .npy
 ```
-python main_diffusion.py --config=$DIFFUSION_CONFIG --mode=uncond_gen \
---config.eval.eval_dir=$OUTPUT_PATH \
---config.eval.ckpt_path=$CKPT_PATH
+python main_diffusion.py --config configs/res64_cond.py --mode=uncond_gen \
+--config.eval.eval_dir= /path/to/output_dir \
+--config.eval.ckpt_path=ckp/conditional_checkpoint.pth
 ```
+`mode=cond_gen` is for conditionnal generation with Single-view a single view of a mesh positioned in its canonical pose
 
-Later run
+`mode=uncond_gen` is initially unconditionnal generation. Code has been changed to be conditionnal on classes. (TO DO: add another mode)
 
-```
-cd nvdiffrec
-python eval.py --config $DMTET_CONFIG --out-dir $OUT_DIR --sample-path $SAMPLE_PATH \
---deform-scale $DEFORM_SCALE [--angle-ind $ANGLE_INDEX] [--num-smoothing-steps $NUM_SMOOTHING_STEPS]
-```
-
-where `$SAMPLE_PATH` is the generated sample `.npy` file in `$OUTPUT_PATH`, and `$DEFORM_SCALE` is the scale of deformation of tet vertices set for the DMTet dataset (we use 3.0 for resolution 64 as default; change the value for your own datasets). Change `$ANGLE_INDEX` to some number from 0 to 50 if images rendered from different angles are desired. Change `$NUM_SMOOTHING_STEPS` (default value 3) if the Laplacian smoothing during post-processing is too strong. For instance, we recommend setting `$NUM_SMOOTHING_STEPS` to 1 or 2 for the airplane category.
-
-A mesh file (`.obj`) will be saved to the folder, which can be viewed in tools such as MeshLab. The saved images are rendered from raw meshes without post-processing and thus are used for fast sanity check only.
-
-
-### Single-view Conditional Generation
-
-First fit a DMTet from a single view of a mesh positioned in its canonical pose
-
+Then, transform the grid data generated to meshes by running the following:
 ```
 cd nvdiffrec
-python fit_singleview.py --config $DMTET_CONFIG --mesh-path $MESH_PATH --angle-ind $ANGLE_IND --out-dir $OUT_DIR --validate $VALIDATE
+python eval.py --config configs/res64.json --out-dir /path/to/output_dir --sample-path sample.npy --deform-scale 3 
 ```
 
-where `$ANGLE_IND` is an integer (0 to 50) controlling the z-axis rotation of the object. Set `$VALIDATE` to 1 if visualization of fitted DMTets is needed.
-
-Then use the trained diffusion model to complete the occluded regions
-
-```
-cd ..
-
-python main_diffusion.py --mode=cond_gen --config=$DIFFUSION_CONFIG \
---config.eval.eval_dir=$EVAL_DIR \
---config.eval.ckpt_path=$CKPT_PATH \
---config.eval.partial_dmtet_path=$OUT_DIR/tets/dmtet.pt \
---config.eval.tet_path=$TET_PATH \
---config.eval.batch_size=$EVAL_BATCH_SIZE
-```
-
-, in which `$TET_PATH` is the uniform tetrahedral grid (of resolution 64 or 128) file in `nvdiffrec/data/tets`.
-
-Now store the completed meshes as `.obj` files in `$SAMPLE_PATH`
-
-```
-cd nvdiffrec
-python eval.py --config $DMTET_CONFIG --sample-path $SAMPLE_PATH \
---deform-scale $DEFORM_SCALE [--angle-ind $ANGLE_INDEX] [--num-smoothing-steps $NUM_SMOOTHING_STEPS]
-```
-
-Caution: the deformation scale should be consistent for single view fitting and the diffusion model. Check before you run conditional generation.
-
+where `sample.npy` is the `.npy` file generated by the model
 
 
 ## Training
 
-For ShapeNet, first create a list of paths of all ground-truth meshes and store them as a json file under `./nvdiffrec/data/shapenet_json`.
+
+### preprocessing
+
+Create a list of paths of all ground-truth meshes under json or csv file `meshes.json or meshes.csv`.
+Create a data directory where to save the data (ex: data)
 
 Then run the following
 
 ```
 cd nvdiffrec
-python fit_dmtets.py --config $DMTET_CONFIG --meta-path $META_PATH --out-dir $DMTET_DATA_PATH --index 0 --split-size 100000
+python fit_dmtets.py --config configs/res64.json --meta-path meshes.json --out-dir data --index 0 --split-size 100000
 ```
 
-where `split_size` is set to any large number greater than the dataset size. In case of batch fitting with multiple jobs, change `split_size` to a suitable number and assign a different `index` for different jobs. Tune the resolutions in the 1st and 2nd pass fitting in the config file if necessary. `$META_PATH` is the json file created to store the list of meshes paths.
+where `split_size` is set to any large number greater than the dataset size. In case of batch fitting with multiple jobs, change `split_size` to a suitable number and assign a different `index` for different jobs. Tune the resolutions in the 1st and 2nd pass fitting in the config file if necessary.
 
 Now convert the DMTet dataset (stored as python dicts) into a dataset of 3D cubic grids:
 
 ```
 cd ../data/
-python tets_to_3dgrid.py --resolution $RESOLUTION --root $DMTET_DICT_FOLDER --source $SOURCE_FOLDER --target grid --index 0
+python tets_to_3dgrid.py --resolution 64 --root data --source tets  --target grid --index 0
 ```
 
-in which we assume the DMTet dict dataset is stored in `$DMTET_DICT_FOLDER/$SOURCE_FOLDER` and we will save the resulted cubic grid dataset in `$DMTET_DICT_FOLDER/grid`.
+it will use the DMTet in `data/tets` and save the resulted cubic grid in `data/grid`.
 
-Create a meta file of all dmtet 3D cubic grid file locations for diffusion model training:
+Create a meta file of all dmtet 3D cubic grid file locations with the class associated for diffusion model training:
 
-```
-cd ../metadata/
-python save_meta.py --data_path $DMTET_DICT_FOLDER/grid --json_path $META_FILE
-```
 
-Train a diffusion model
+### Train a diffusion model
 
 ```
 cd ..
 
-python main_diffusion.py --mode=train --config=$DIFFUSION_CONFIG \
---config.data.meta_path=$META_FILE \
---config.data.filter_meta_path=$TRAIN_SPLIT_FILE
+python main_diffusion.py --mode=train --config=configs/res64_cond.py
+ --config.data.train_csv train.csv --config.data.val_csv val.csv \ 
+ --config.eval.eval_dir output_dir --config.training.train_dir train_dir
 ```
 
-where `$TRAIN_SPLIT_FILE` is a json list of indices to be included in the training set. Examples in `metadata/train_split/`. For the diffusion model config file, please refer to `configs/res64.py` or `configs/res128.py`.
-
-#### Training with our dataset
-
-The provided datasets are stored in `.npy` instead of `.pt`. Run the following instead
-
-```
-cd ../metadata/
-python save_meta.py --data_path $DMTET_NPY_FOLDER --json_path $META_FILE --extension npy
-```
-
-Train a diffusion model
-
-```
-cd ..
-
-python main_diffusion.py --mode=train --config=$DIFFUSION_CONFIG \
---config.data.meta_path=$META_FILE \
---config.data.filter_meta_path=$TRAIN_SPLIT_FILE \
---config.data.extension=npy
-```
-
-## Texture Generation
-
-Follow the instructions in https://github.com/TEXTurePaper/TEXTurePaper and create text-conditioned textures for the generated meshes.
-
-## Others
-
-If tetrahedral grids of higher resolutions are needed, first follow the README in `nvdiffrec/data/tets` and use [quartet](https://github.com/crawforddoran/quartet) to generate a uniform tetrahedral grid. Then run `nvdiffrec/data/tets/crop_tets.py` to remove the boundary (so that translational symmetry holds in the resulted grid).
-
-## Blender Visualization
-
-To visualize generated meshes with blender, please see `blender_viz/` for more details.
+where `output_dir` is the directory where to save the generated samples and `train_dir` is the directory to save the model
 
 ## Citation
-If you find our work useful to your research, please consider citing:
-
 ```
 @InProceedings{Liu2023MeshDiffusion,
     title={MeshDiffusion: Score-based Generative 3D Mesh Modeling},
@@ -191,4 +85,4 @@ If you find our work useful to your research, please consider citing:
 
 ## Acknowledgement
 
-This repo is adapted from https://github.com/NVlabs/nvdiffrec and https://github.com/yang-song/score_sde_pytorch.
+This repo is adapted from https://github.com/NVlabs/nvdiffrec, https://github.com/yang-song/score_sde_pytorch and https://github.com/lzzcd001/MeshDiffusion
