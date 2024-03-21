@@ -212,7 +212,7 @@ class Buffer(object):
 ###############################################################################
 
 class DMTetGeometry(torch.nn.Module):
-    def __init__(self, grid_res, scale, FLAGS, root='./', grid_to_tet=None, deform_scale=2.0, **kwargs):
+    def __init__(self, grid_res, scale, FLAGS, root='nvdiffrec', grid_to_tet=None, deform_scale=2.0, **kwargs):
         super(DMTetGeometry, self).__init__()
 
         self.FLAGS         = FLAGS
