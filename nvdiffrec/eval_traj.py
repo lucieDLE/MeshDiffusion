@@ -380,7 +380,7 @@ if __name__ == "__main__":
         deform_scale=FLAGS.deform_scale
     )
 
-    mask = torch.load(f'../data/grid_mask_{resolution}.pt').view(1, resolution, resolution, resolution).to("cuda")
+    mask = torch.load(f'data/grid_mask_{resolution}.pt').view(1, resolution, resolution, resolution).to("cuda")
 
     ### compute the mapping from tet indices to 3D cubic grid vertex indices
     tet_path = FLAGS.tet_path
