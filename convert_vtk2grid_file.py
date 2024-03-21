@@ -27,7 +27,6 @@ def main(args):
                                 'class':class_list
                          })
 
-    pdb.set_trace()
     df_out.to_csv(os.path.join(args.out, args.name +'.csv'))
 
 
@@ -41,10 +40,6 @@ def main(args):
         df_test.to_csv(os.path.join(args.out, args.name +'_test.csv'))
         df_train_test.to_csv(os.path.join(args.out, args.name +'_train_test.csv'))
         df_train_train.to_csv(os.path.join(args.out, args.name +'_train_train.csv'))
-
-        print(len(df_out), len(df_test), len(df_train_test), len(df_train_train))
-        print('done')
-
 
 if __name__ == "__main__":
 
